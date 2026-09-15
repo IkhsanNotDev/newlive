@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex,nofollow" />
+  <title>NewLiveSmp</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --purple: #8b5cf6;
+      --muted: #a1a1aa;
+      --text: #f4f4f5;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; height: 100%;
+      background: var(--bg); color: var(--text);
+      font-family: Inter, system-ui, sans-serif;
+      overflow: hidden;
+    }
+    #frame {
+      width: 100%; height: 100%; border: 0; display: block;
+      background: var(--bg);
+    }
+    #boot, #maint {
+      position: fixed; inset: 0; z-index: 50;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      text-align: center; padding: 1.5rem;
+      background:
+        radial-gradient(ellipse 70% 50% at 50% -10%, rgba(124,58,237,.4), transparent 55%),
+        var(--bg);
+    }
+    #maint { display: none; }
+    .logo {
+      width: 56px; height: 56px; border-radius: 14px;
+      background: linear-gradient(135deg, #7c3aed, #06b6d4);
+      display: grid; place-items: center;
+      font-weight: 800; font-size: 1.3rem; margin-bottom: 1.25rem;
+      box-shadow: 0 12px 40px rgba(124,58,237,.35);
+    }
+    h1 {
+      font-size: clamp(1.4rem, 4vw, 2rem);
+      font-weight: 800; letter-spacing: -.03em; margin: 0 0 .5rem;
+    }
+    p { color: var(--muted); max-width: 420px; line-height: 1.55; margin: 0 0 1.25rem; }
+    .spinner {
+      width: 36px; height: 36px; border-radius: 50%;
+      border: 3px solid rgba(255,255,255,.12);
+      border-top-color: var(--purple);
+      animation: spin .8s linear infinite; margin-bottom: 1rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: .7rem 1.25rem; border-radius: 12px; border: none;
+      background: linear-gradient(135deg, #7c3aed, #4f46e5);
+      color: #fff; font-weight: 600; font-family: inherit; cursor: pointer;
+      text-decoration: none;
+    }
+    .btn:hover { filter: brightness(1.08); }
+    .hint { font-size: .8rem; color: #71717a; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <div id="boot">
+    <div class="spinner"></div>
+    <div class="logo">N</div>
+    <h1>Memuat NewLiveSmp…</h1>
+    <p>Menyiapkan rank shop &amp; layanan.</p>
+  </div>
+
+  <div id="maint">
+    <div class="logo">N</div>
+    <h1>Sedang Maintenance</h1>
+    <p id="maint-msg">Layanan sementara tidak dapat dihubungi. Kami sedang memperbaiki sistem. Coba lagi beberapa menit.</p>
+    <button class="btn" type="button" id="btn-retry">Coba lagi</button>
+    <p class="hint">NewLiveSmp Rank Shop</p>
+  </div>
+
+  <iframe id="frame" title="NewLiveSmp" allow="payment *; fullscreen *" style="display:none"></iframe>
+
+  <script>
+  (function () {
+    /**
+     * CONFIG — ganti origin backend (HTTP di panel Node kamu).
+     * Di-obfuscate ringan agar tidak langsung terbaca di View Source.
+     * Bukan keamanan absolut: network tab tetap bisa melihat request.
+     * Proteksi API tetap di server (rate-limit, signature, secret).
+     */
+    // ORIGIN backend — localtunnel custom subdomain (HTTPS)
+    // Setelah bot start, pastikan log menampilkan: https://shop-newlivesmp.loca.lt
+    // Jika subdomain terpakai, localtunnel kasih random; ganti URL di bawah sesuai log.
+    var ORIGIN = (function () {
+      // Primary: custom localtunnel
+      return 'https://shop-newlivesmp.loca.lt';
+      // Fallback contoh (uncomment jika perlu):
+      // return 'http://botz.vy-node.my.id:19133';
+    })();
+
+    var TITLE_MAP = {
+      '/': 'NewLiveSmp — Rank Shop',
+      '/id': 'NewLiveSmp — Beranda',
+      '/en': 'NewLiveSmp — Home',
+      '/shop': 'NewLiveSmp — Shop',
+      '/shop/id': 'NewLiveSmp — Rank Shop',
+      '/shop/en': 'NewLiveSmp — Rank Shop',
+      '/donate': 'NewLiveSmp — Donate',
+      '/donate/id': 'NewLiveSmp — Donate',
+      '/donate/en': 'NewLiveSmp — Donate',
+      '/about': 'NewLiveSmp — Developer',
+      '/about/id': 'NewLiveSmp — Developer',
+      '/about/en': 'NewLiveSmp — Developer',
+      '/dashboard': 'NewLiveSmp — Dashboard',
+      '/status': 'NewLiveSmp — Status',
+      '/server': 'NewLiveSmp — Server',
+      '/login': 'NewLiveSmp — Login',
+      '/register': 'NewLiveSmp — Daftar',
+      '/profile': 'NewLiveSmp — Profil'
+    };
+
+    var boot = document.getElementById('boot');
+    var maint = document.getElementById('maint');
+    var frame = document.getElementById('frame');
+    var healthFails = 0;
+
+    function pathFromLocation() {
+      var path = window.location.pathname || '/';
+      if (path === '/' || path === '' || path === '/index.html') return '/id';
+      // strip trailing index.html
+      path = path.replace(/\/index\.html$/i, '');
+      return path || '/id';
+    }
+
+    function updateTitle() {
+      var path = pathFromLocation();
+      var t = TITLE_MAP[path];
+      if (!t) {
+        var segs = path.split('/').filter(Boolean);
+        if (segs.length) {
+          t = 'NewLiveSmp — ' + segs[0].charAt(0).toUpperCase() + segs[0].slice(1);
+        } else t = 'NewLiveSmp';
+      }
+      document.title = t;
+    }
+
+    function showMaint(msg) {
+      boot.style.display = 'none';
+      frame.style.display = 'none';
+      maint.style.display = 'flex';
+      if (msg) document.getElementById('maint-msg').textContent = msg;
+    }
+
+    function showFrame(src) {
+      maint.style.display = 'none';
+      boot.style.display = 'none';
+      frame.style.display = 'block';
+      if (frame.getAttribute('src') !== src) frame.src = src;
+    }
+
+    function checkHealth() {
+      return new Promise(function (resolve) {
+        var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        var timer = setTimeout(function () {
+          try { if (ctrl) ctrl.abort(); } catch (e) {}
+          resolve(false);
+        }, 8000);
+        var opts = { method: 'GET', cache: 'no-store', mode: 'cors' };
+        if (ctrl) opts.signal = ctrl.signal;
+        fetch(ORIGIN + '/health', opts)
+          .then(function (r) {
+            clearTimeout(timer);
+            resolve(r.ok);
+          })
+          .catch(function () {
+            clearTimeout(timer);
+            resolve(false);
+          });
+      });
+    }
+
+    function load() {
+      updateTitle();
+      boot.style.display = 'flex';
+      maint.style.display = 'none';
+      var target = ORIGIN + pathFromLocation();
+      checkHealth().then(function (ok) {
+        if (!ok) {
+          healthFails++;
+          showMaint(
+            healthFails > 2
+              ? 'Server sedang offline atau maintenance. Silakan coba lagi nanti.'
+              : 'Tidak dapat terhubung ke server. Memeriksa ulang…'
+          );
+          return;
+        }
+        healthFails = 0;
+        showFrame(target);
+      });
+    }
+
+    document.getElementById('btn-retry').addEventListener('click', load);
+
+    // Period health while open
+    setInterval(function () {
+      if (document.hidden) return;
+      checkHealth().then(function (ok) {
+        if (!ok) {
+          healthFails++;
+          if (healthFails >= 2) {
+            showMaint('Koneksi ke server terputus. Kami akan coba lagi otomatis.');
+          }
+        } else if (healthFails > 0) {
+          healthFails = 0;
+          load();
+        }
+      });
+    }, 30000);
+
+    // Support path changes (back/forward) if host does SPA fallback to this file
+    window.addEventListener('popstate', load);
+
+    load();
+  })();
+  </script>
+</body>
+</html>
